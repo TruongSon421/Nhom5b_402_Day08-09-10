@@ -19,6 +19,7 @@ A/B Rule (từ slide):
 
 import json
 import csv
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -29,7 +30,9 @@ from rag_answer import rag_answer, call_llm
 # =============================================================================
 
 TEST_QUESTIONS_PATH = Path(__file__).parent / "data" / "test_questions.json"
+GRADING_QUESTIONS_PATH = Path(__file__).parent / "data" / "grading_questions.json"
 RESULTS_DIR = Path(__file__).parent / "results"
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4.1")
 
 # Cấu hình baseline (Sprint 2)
 BASELINE_CONFIG = {
@@ -37,6 +40,8 @@ BASELINE_CONFIG = {
     "top_k_search": 10,
     "top_k_select": 3,
     "use_rerank": False,
+    "dense_weight": 0.6,
+    "sparse_weight": 0.4,
     "label": "baseline_dense",
 }
 
@@ -44,16 +49,29 @@ BASELINE_CONFIG = {
 # TODO Sprint 4: Cập nhật VARIANT_CONFIG theo variant nhóm đã implement
 VARIANT_CONFIG = {
     "retrieval_mode": "hybrid",   # Hoặc "dense" nếu chỉ đổi rerank
-    "top_k_search": 10,
-    "top_k_select": 3,
-    "use_rerank": True,           # Hoặc False nếu variant là hybrid không rerank
-    "label": "variant_hybrid_rerank",
+    "top_k_search": 15,
+    "top_k_select": 5,
+    "use_rerank": False,          # Giữ nguyên với baseline để chỉ đổi 1 biến (retrieval_mode)
+    "dense_weight": 0.6,
+    "sparse_weight": 0.4,
+    "label": "variant_hybrid",
 }
 
 
 def _call_judge_llm(prompt: str) -> str:
-    """Thin wrapper around call_llm() — single mock point for tests."""
-    return call_llm(prompt)
+    """Thin wrapper around call_llm() for judge prompts."""
+    return call_llm(prompt, model=JUDGE_MODEL)
+
+
+def resolve_questions_path() -> Path:
+    """
+    Ưu tiên bộ câu hỏi thật để chấm điểm:
+    - data/grading_questions.json (nếu có)
+    - fallback: data/test_questions.json
+    """
+    if GRADING_QUESTIONS_PATH.exists():
+        return GRADING_QUESTIONS_PATH
+    return TEST_QUESTIONS_PATH
 
 
 def _parse_judge_response(raw: str) -> dict:
@@ -262,6 +280,7 @@ Respond ONLY with valid JSON: {{"score": <int 1-5>, "missing_points": ["<point>"
 def run_scorecard(
     config: Dict[str, Any],
     test_questions: Optional[List[Dict]] = None,
+    questions_path: Optional[Path] = None,
     verbose: bool = True,
 ) -> List[Dict[str, Any]]:
     """
@@ -270,22 +289,18 @@ def run_scorecard(
     Args:
         config: Pipeline config (retrieval_mode, top_k, use_rerank, ...)
         test_questions: List câu hỏi (load từ JSON nếu None)
+        questions_path: Đường dẫn file câu hỏi nếu test_questions là None
         verbose: In kết quả từng câu
 
     Returns:
         List scorecard results, mỗi item là một row
 
-    TODO Sprint 4:
-    1. Load test_questions từ data/test_questions.json
-    2. Với mỗi câu hỏi:
-       a. Gọi rag_answer() với config tương ứng
-       b. Chấm 4 metrics
-       c. Lưu kết quả
-    3. Tính average scores
-    4. In bảng kết quả
+    Nếu không truyền test_questions, hàm sẽ tự load từ questions_path
+    (mặc định là grading_questions.json nếu có).
     """
     if test_questions is None:
-        with open(TEST_QUESTIONS_PATH, "r", encoding="utf-8") as f:
+        source_path = questions_path or resolve_questions_path()
+        with open(source_path, "r", encoding="utf-8") as f:
             test_questions = json.load(f)
 
     results = []
@@ -314,6 +329,8 @@ def run_scorecard(
                 top_k_search=config.get("top_k_search", 10),
                 top_k_select=config.get("top_k_select", 3),
                 use_rerank=config.get("use_rerank", False),
+                dense_weight=config.get("dense_weight", 0.6),
+                sparse_weight=config.get("sparse_weight", 0.4),
                 verbose=False,
             )
             answer = result["answer"]
@@ -488,6 +505,8 @@ def run_grading_log(
                 top_k_search=config.get("top_k_search", 10),
                 top_k_select=config.get("top_k_select", 3),
                 use_rerank=config.get("use_rerank", False),
+                dense_weight=config.get("dense_weight", 0.6),
+                sparse_weight=config.get("sparse_weight", 0.4),
                 verbose=False,
             )
             answer = result["answer"]
@@ -524,17 +543,23 @@ if __name__ == "__main__":
     print("Sprint 4: Evaluation & Scorecard")
     print("=" * 60)
 
-    # Load test questions
-    print(f"\nLoading test questions từ: {TEST_QUESTIONS_PATH}")
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("Thiếu OPENAI_API_KEY. Hãy thêm OPENAI_API_KEY vào file .env trước khi chạy eval.")
+
+    questions_path = resolve_questions_path()
+
+    # Load questions
+    print(f"\nLoading questions từ: {questions_path}")
     try:
-        with open(TEST_QUESTIONS_PATH, "r", encoding="utf-8") as f:
+        with open(questions_path, "r", encoding="utf-8") as f:
             test_questions = json.load(f)
         print(f"Tìm thấy {len(test_questions)} câu hỏi")
         for q in test_questions[:3]:
             print(f"  [{q['id']}] {q['question']} ({q['category']})")
         print("  ...")
     except FileNotFoundError:
-        print("Không tìm thấy file test_questions.json!")
+        print("Không tìm thấy file câu hỏi (grading_questions.json hoặc test_questions.json)!")
         test_questions = []
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -547,6 +572,7 @@ if __name__ == "__main__":
         baseline_results = run_scorecard(
             config=BASELINE_CONFIG,
             test_questions=test_questions,
+            questions_path=questions_path,
             verbose=True,
         )
         baseline_md = generate_scorecard_summary(baseline_results, "baseline_dense")
@@ -562,6 +588,7 @@ if __name__ == "__main__":
         variant_results = run_scorecard(
             config=VARIANT_CONFIG,
             test_questions=test_questions,
+            questions_path=questions_path,
             verbose=True,
         )
         variant_md = generate_scorecard_summary(variant_results, VARIANT_CONFIG["label"])
@@ -582,7 +609,7 @@ if __name__ == "__main__":
     print("\n--- Sinh Grading Log ---")
     try:
         run_grading_log(
-            questions_path=TEST_QUESTIONS_PATH,
+            questions_path=questions_path,
             config=VARIANT_CONFIG,
             output_path=Path(__file__).parent / "logs" / "grading_run.json",
         )

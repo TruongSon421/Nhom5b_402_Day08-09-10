@@ -267,11 +267,21 @@ def build_grounded_prompt(query: str, context_block: str) -> str:
     3. Citation: Gắn source/section khi có thể
     4. Short, clear, stable: Output ngắn, rõ, nhất quán
     """
-    prompt = f"""Answer only from the retrieved context below.
-If the context is insufficient to answer the question, respond with "Không đủ dữ liệu trong tài liệu hiện có." and do not make up information.
-Cite the source number in brackets (e.g. [1], [2]) when possible.
-Keep your answer short, clear, and factual.
-Respond in the same language as the question.
+    prompt = f"""You are a strict grounded QA assistant.
+
+Rules:
+1) Use ONLY the retrieved context. Never infer or add facts not present in context.
+2) If the question has multiple requirements, answer ALL requirements in a structured way.
+3) If context is insufficient for the entire question, respond exactly:
+"Không đủ dữ liệu trong tài liệu hiện có."
+4) If context is sufficient for some requirements but missing for others, answer available parts and explicitly state which part is missing.
+5) Cite source numbers in brackets (e.g. [1], [2]) for each key claim.
+6) Respond in the same language as the question.
+7) Keep the answer concise, clear, and factual.
+
+Output format:
+- If question has one requirement: one short paragraph.
+- If question has multiple requirements: bullet points, one bullet per requirement.
 
 Question: {query}
 
@@ -282,7 +292,7 @@ Answer:"""
     return prompt
 
 
-def call_llm(prompt: str) -> str:
+def call_llm(prompt: str, model: Optional[str] = None) -> str:
     """
     Gọi OpenAI để sinh câu trả lời.
     Dùng temperature=0 để output ổn định cho evaluation.
@@ -291,7 +301,7 @@ def call_llm(prompt: str) -> str:
 
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     response = client.chat.completions.create(
-        model=LLM_MODEL,
+        model=model or LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
         max_tokens=512,
@@ -305,6 +315,8 @@ def rag_answer(
     top_k_search: int = TOP_K_SEARCH,
     top_k_select: int = TOP_K_SELECT,
     use_rerank: bool = False,
+    dense_weight: float = 0.6,
+    sparse_weight: float = 0.4,
     verbose: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -316,6 +328,8 @@ def rag_answer(
         top_k_search: Số chunk lấy từ vector store (search rộng)
         top_k_select: Số chunk đưa vào prompt (sau rerank/select)
         use_rerank: Có dùng cross-encoder rerank không
+        dense_weight: Trọng số dense trong hybrid RRF
+        sparse_weight: Trọng số sparse trong hybrid RRF
         verbose: In thêm thông tin debug
 
     Returns:
@@ -331,6 +345,8 @@ def rag_answer(
         "top_k_search": top_k_search,
         "top_k_select": top_k_select,
         "use_rerank": use_rerank,
+        "dense_weight": dense_weight,
+        "sparse_weight": sparse_weight,
     }
 
     # --- Bước 1: Retrieve ---
@@ -339,7 +355,12 @@ def rag_answer(
     elif retrieval_mode == "sparse":
         candidates = retrieve_sparse(query, top_k=top_k_search)
     elif retrieval_mode == "hybrid":
-        candidates = retrieve_hybrid(query, top_k=top_k_search)
+        candidates = retrieve_hybrid(
+            query,
+            top_k=top_k_search,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight,
+        )
     else:
         raise ValueError(f"retrieval_mode không hợp lệ: {retrieval_mode}")
 
