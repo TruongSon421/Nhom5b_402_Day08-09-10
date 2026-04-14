@@ -48,7 +48,7 @@ def run_test_questions(questions_file: str = "data/test_questions.json") -> list
         question_text = q["question"]
         q_id = q.get("id", f"q{i:02d}")
 
-        print(f"[{i:02d}/{len(questions)}] {q_id}: {question_text[:65]}...")
+        print(f"\n[{i:02d}/{len(questions)}] {q_id}: {question_text[:65]}...")
 
         try:
             result = run_graph(question_text)
@@ -56,9 +56,29 @@ def run_test_questions(questions_file: str = "data/test_questions.json") -> list
 
             # Save individual trace
             trace_file = save_trace(result, f"artifacts/traces")
-            print(f"  ✓ route={result.get('supervisor_route', '?')}, "
-                  f"conf={result.get('confidence', 0):.2f}, "
-                  f"{result.get('latency_ms', 0)}ms")
+            
+            # Print detailed trace to terminal
+            print(f"  ✓ Route: {result.get('supervisor_route', '?')}")
+            print(f"    Reason: {result.get('route_reason', 'N/A')}")
+            print(f"    Workers: {' → '.join(result.get('workers_called', []))}")
+            
+            # MCP tools used
+            mcp_tools = result.get('mcp_tools_used', [])
+            if mcp_tools:
+                tool_names = [t.get('tool', 'unknown') if isinstance(t, dict) else str(t) for t in mcp_tools]
+                print(f"    MCP Tools: {', '.join(tool_names)}")
+            
+            # Sources
+            sources = result.get('retrieved_sources', [])
+            if sources:
+                print(f"    Sources: {', '.join(sources[:3])}{'...' if len(sources) > 3 else ''}")
+            
+            # Confidence and latency
+            print(f"    Confidence: {result.get('confidence', 0):.2f} | Latency: {result.get('latency_ms', 0)}ms")
+            
+            # HITL status
+            if result.get('hitl_triggered'):
+                print(f"    ⚠️  HITL Triggered")
 
             results.append({
                 "id": q_id,
@@ -113,7 +133,7 @@ def run_grading_questions(questions_file: str = "data/grading_questions.json") -
         for i, q in enumerate(questions, 1):
             q_id = q.get("id", f"gq{i:02d}")
             question_text = q["question"]
-            print(f"[{i:02d}/{len(questions)}] {q_id}: {question_text[:65]}...")
+            print(f"\n[{i:02d}/{len(questions)}] {q_id}: {question_text[:65]}...")
 
             try:
                 result = run_graph(question_text)
@@ -131,7 +151,23 @@ def run_grading_questions(questions_file: str = "data/grading_questions.json") -
                     "latency_ms": result.get("latency_ms"),
                     "timestamp": datetime.now().isoformat(),
                 }
-                print(f"  ✓ route={record['supervisor_route']}, conf={record['confidence']:.2f}")
+                
+                # Print detailed trace to terminal
+                print(f"  ✓ Route: {record['supervisor_route']}")
+                print(f"    Reason: {record['route_reason']}")
+                print(f"    Workers: {' → '.join(record['workers_called'])}")
+                
+                if record['mcp_tools_used']:
+                    print(f"    MCP Tools: {', '.join(record['mcp_tools_used'])}")
+                
+                if record['sources']:
+                    print(f"    Sources: {', '.join(record['sources'][:3])}{'...' if len(record['sources']) > 3 else ''}")
+                
+                print(f"    Confidence: {record['confidence']:.2f} | Latency: {record['latency_ms']}ms")
+                
+                if record['hitl_triggered']:
+                    print(f"    ⚠️  HITL Triggered")
+                    
             except Exception as e:
                 record = {
                     "id": q_id,
