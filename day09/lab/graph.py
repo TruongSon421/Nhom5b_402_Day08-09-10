@@ -94,25 +94,25 @@ def supervisor_node(state: AgentState) -> AgentState:
 
     # Initialize routing variables
     route = "retrieval_worker"
-    route_reason = "default route"
+    route_reason = "default route | MCP: not needed"
     needs_tool = False
     risk_high = False
 
     # Priority 1: Check for policy/access keywords
     if any(kw in task for kw in policy_keywords):
         route = "policy_tool_worker"
-        route_reason = "task contains policy/access keyword"
+        route_reason = "task contains policy/access keyword | MCP: search_kb selected"
         needs_tool = True
     # Priority 2: Check for retrieval keywords (only if not policy)
     elif any(kw in task for kw in retrieval_keywords):
         route = "retrieval_worker"
-        route_reason = "task contains SLA/ticket keyword"
+        route_reason = "task contains SLA/ticket keyword | MCP: not needed"
 
     # Risk assessment (can override routing)
     if any(kw in task for kw in risk_keywords):
         risk_high = True
         if route_reason == "default route":
-            route_reason = "risk_high flagged"
+            route_reason = "risk_high flagged | MCP: not needed"
         else:
             route_reason += " | risk_high flagged"
 
