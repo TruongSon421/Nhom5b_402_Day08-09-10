@@ -1,0 +1,73 @@
+{
+  "task": "Nhân viên vừa vào thử việc (trong probation period) muốn làm remote vì lý do cá nhân. Điều kiện là gì?",
+  "route_reason": "default route | MCP: not needed",
+  "risk_high": false,
+  "needs_tool": false,
+  "hitl_triggered": false,
+  "retrieved_chunks": [
+    {
+      "text": "4.1 Điều kiện remote:\n- Nhân viên sau probation period có thể làm remote tối đa 2 ngày/tuần.\n- Team Lead phải phê duyệt lịch remote qua HR Portal.\n- Ngày onsite bắt buộc: Thứ 3 và Thứ 5 theo lịch team.\n\n4.2 Yêu cầu kỹ thuật khi remote:\n- Kết nối VPN bắt buộc khi làm việc với hệ thống nội bộ.\n- Camera bật trong các cuộc họp team.",
+      "source": "hr/leave-policy-2026.pdf",
+      "score": 0.7449,
+      "metadata": {
+        "department": "HR",
+        "source": "hr/leave-policy-2026.pdf",
+        "access": "internal",
+        "effective_date": "2026-01-01",
+        "section": "Phần 4: Remote work policy"
+      }
+    },
+    {
+      "text": "Bước 1: Nhân viên gửi yêu cầu nghỉ phép qua hệ thống HR Portal (https://hr.company.internal) ít nhất 3 ngày làm việc trước ngày nghỉ.\nBước 2: Line Manager phê duyệt hoặc từ chối trong vòng 1 ngày làm việc.\nBước 3: Nhân viên nhận thông báo qua email sau khi được phê duyệt.\n\nTrường hợp khẩn cấp: Có thể gửi yêu cầu muộn hơn nhưng phải được Line Manager đồng ý qua tin nhắn trực tiếp.",
+      "source": "hr/leave-policy-2026.pdf",
+      "score": 0.4972,
+      "metadata": {
+        "section": "Phần 2: Quy trình xin nghỉ phép",
+        "source": "hr/leave-policy-2026.pdf",
+        "effective_date": "2026-01-01",
+        "access": "internal",
+        "department": "HR"
+      }
+    },
+    {
+      "text": "Quyền phải được thu hồi trong các trường hợp:\n- Nhân viên nghỉ việc: Thu hồi ngay trong ngày cuối.\n- Hết hạn contract: Thu hồi đúng ngày hết hạn.\n- Chuyển bộ phận: Điều chỉnh trong 3 ngày làm việc.",
+      "source": "it/access-control-sop.md",
+      "score": 0.4751,
+      "metadata": {
+        "department": "IT Security",
+        "section": "Section 5: Thu hồi quyền truy cập",
+        "effective_date": "2026-01-01",
+        "source": "it/access-control-sop.md",
+        "access": "internal"
+      }
+    }
+  ],
+  "retrieved_sources": [
+    "it/access-control-sop.md",
+    "hr/leave-policy-2026.pdf"
+  ],
+  "policy_result": {},
+  "mcp_tools_used": [],
+  "final_answer": "Theo tài liệu nội bộ, chỉ nhân viên sau probation period mới được làm remote tối đa 2 ngày/tuần. Không có thông tin về việc nhân viên trong probation period được phép remote, do đó nhân viên thử việc không đủ điều kiện làm remote theo chính sách hiện tại [hr/leave-policy-2026.pdf].",
+  "sources": [
+    "it/access-control-sop.md",
+    "hr/leave-policy-2026.pdf"
+  ],
+  "confidence": 0.95,
+  "history": [
+    "[supervisor] received task: Nhân viên vừa vào thử việc (trong probation period) muốn làm remote vì lý do cá ",
+    "[supervisor] route=retrieval_worker reason=default route | MCP: not needed",
+    "[retrieval_worker] retrieved 3 chunks from ['it/access-control-sop.md', 'hr/leave-policy-2026.pdf']",
+    "[synthesis_worker] answer generated, confidence=0.95, sources=['it/access-control-sop.md', 'hr/leave-policy-2026.pdf']",
+    "[graph] completed in 2528ms"
+  ],
+  "workers_called": [
+    "retrieval_worker",
+    "synthesis_worker"
+  ],
+  "supervisor_route": "retrieval_worker",
+  "latency_ms": 2528,
+  "run_id": "run_20260414_170559_747399",
+  "timestamp": "2026-04-14T17:06:02.275843",
+  "question_id": "q14"
+}
