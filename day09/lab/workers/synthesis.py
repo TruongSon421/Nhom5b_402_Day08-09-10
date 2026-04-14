@@ -15,8 +15,14 @@ Output (vào AgentState):
 Gọi độc lập để test:
     python workers/synthesis.py
 """
-
 import os
+
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 WORKER_NAME = "synthesis_worker"
 
@@ -81,6 +87,15 @@ def _build_context(chunks: list, policy_result: dict) -> str:
         parts.append("\n=== POLICY EXCEPTIONS ===")
         for ex in policy_result["exceptions_found"]:
             parts.append(f"- {ex.get('rule', '')}")
+
+    if policy_result and policy_result.get("policy_version_note"):
+        parts.append(f"\n=== POLICY VERSION NOTE ===\n{policy_result['policy_version_note']}")
+
+    if policy_result and policy_result.get("store_credit_info"):
+        parts.append(f"\n=== STORE CREDIT INFO ===\n{policy_result['store_credit_info']}")
+
+    if policy_result and policy_result.get("refund_window_info"):
+        parts.append(f"\n=== REFUND WINDOW INFO ===\n{policy_result['refund_window_info']}")
 
     if not parts:
         return "(Không có context)"

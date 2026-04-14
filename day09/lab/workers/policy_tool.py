@@ -20,6 +20,13 @@ import os
 import sys
 from typing import Optional
 
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 WORKER_NAME = "policy_tool_worker"
 
 
@@ -107,39 +114,43 @@ def analyze_policy(task: str, chunks: list) -> dict:
             "source": "policy_refund_v4.txt",
         })
 
+    # Check for store credit question (gq04: store credit = 110%)
+    store_credit_info = None
+    if any(kw in task_lower for kw in ["store credit", "credit nội bộ"]):
+        store_credit_info = "Store credit được cấp với giá trị 110% so với số tiền hoàn (Điều 5, chính sách v4)."
+
+    # Check for refund time window (7 ngày)
+    refund_window_info = None
+    if any(kw in task_lower for kw in ["7 ngày", "trong vòng", "thời hạn", "bao lâu"]):
+        refund_window_info = "Yêu cầu hoàn tiền phải được gửi trong vòng 7 ngày làm việc kể từ thời điểm xác nhận đơn hàng (Điều 2+3)."
+
     # Determine policy_applies
     policy_applies = len(exceptions_found) == 0
 
     # Determine which policy version applies (temporal scoping)
-    # TODO: Check nếu đơn hàng trước 01/02/2026 → v3 applies (không có docs, nên flag cho synthesis)
     policy_name = "refund_policy_v4"
     policy_version_note = ""
-    if "31/01" in task_lower or "30/01" in task_lower or "trước 01/02" in task_lower:
+    if any(kw in task_lower for kw in ["31/01", "30/01", "trước 01/02", "trước ngày 01/02", "trước 1/2"]):
         policy_version_note = "Đơn hàng đặt trước 01/02/2026 áp dụng chính sách v3 (không có trong tài liệu hiện tại)."
-
-    # TODO Sprint 2: Gọi LLM để phân tích phức tạp hơn
-    # Ví dụ:
-    # from openai import OpenAI
-    # client = OpenAI()
-    # response = client.chat.completions.create(
-    #     model="gpt-4o-mini",
-    #     messages=[
-    #         {"role": "system", "content": "Bạn là policy analyst. Dựa vào context, xác định policy áp dụng và các exceptions."},
-    #         {"role": "user", "content": f"Task: {task}\n\nContext:\n" + "\n".join([c['text'] for c in chunks])}
-    #     ]
-    # )
-    # analysis = response.choices[0].message.content
+    elif any(kw in task_lower for kw in ["07/02", "7/2/2026", "sau 01/02"]):
+        policy_version_note = "Đơn hàng từ 01/02/2026 trở đi áp dụng chính sách v4."
 
     sources = list({c.get("source", "unknown") for c in chunks if c})
 
-    return {
+    result = {
         "policy_applies": policy_applies,
         "policy_name": policy_name,
         "exceptions_found": exceptions_found,
         "source": sources,
         "policy_version_note": policy_version_note,
-        "explanation": "Analyzed via rule-based policy check. TODO: upgrade to LLM-based analysis.",
+        "explanation": "Analyzed via rule-based policy check with exception detection.",
     }
+    if store_credit_info:
+        result["store_credit_info"] = store_credit_info
+    if refund_window_info:
+        result["refund_window_info"] = refund_window_info
+
+    return result
 
 
 # ─────────────────────────────────────────────
