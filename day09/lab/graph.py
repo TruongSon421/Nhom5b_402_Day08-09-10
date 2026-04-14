@@ -14,8 +14,8 @@ import os
 from datetime import datetime
 from typing import TypedDict, Literal, Optional
 
-# Uncomment nếu dùng LangGraph:
-# from langgraph.graph import StateGraph, END
+# LangGraph imports
+from langgraph.graph import StateGraph, END
 
 # ─────────────────────────────────────────────
 # 1. Shared State — dữ liệu đi xuyên toàn graph
@@ -234,48 +234,73 @@ def synthesis_worker_node(state: AgentState) -> AgentState:
 # 6. Build Graph
 # ─────────────────────────────────────────────
 
+def should_retrieve_after_policy(state: AgentState) -> str:
+    """
+    Conditional edge: Quyết định có cần retrieval sau policy không.
+    Nếu policy_tool_worker chưa có chunks, cần gọi retrieval trước synthesis.
+    """
+    if not state.get("retrieved_chunks"):
+        return "retrieval_worker"
+    return "synthesis_worker"
+
+
 def build_graph():
     """
-    Xây dựng graph với supervisor-worker pattern.
-
-    Option A (đơn giản — Python thuần): Dùng if/else, không cần LangGraph.
-    Option B (nâng cao): Dùng LangGraph StateGraph với conditional edges.
-
-    Lab này implement Option A theo mặc định.
-    TODO Sprint 1: Có thể chuyển sang LangGraph nếu muốn.
+    Xây dựng graph với supervisor-worker pattern sử dụng LangGraph.
+    
+    Graph flow:
+        START → supervisor → [retrieval | policy_tool | human_review] → synthesis → END
+    
+    LangGraph tự động:
+    - State management (merge updates)
+    - Conditional routing
+    - Execution flow
     """
-    # Option A: Simple Python orchestrator
-    def run(state: AgentState) -> AgentState:
-        import time
-        start = time.time()
-
-        # Step 1: Supervisor decides route
-        state = supervisor_node(state)
-
-        # Step 2: Route to appropriate worker
-        route = route_decision(state)
-
-        if route == "human_review":
-            state = human_review_node(state)
-            # After human approval, continue with retrieval
-            state = retrieval_worker_node(state)
-        elif route == "policy_tool_worker":
-            state = policy_tool_worker_node(state)
-            # Policy worker may need retrieval context first
-            if not state["retrieved_chunks"]:
-                state = retrieval_worker_node(state)
-        else:
-            # Default: retrieval_worker
-            state = retrieval_worker_node(state)
-
-        # Step 3: Always synthesize
-        state = synthesis_worker_node(state)
-
-        state["latency_ms"] = int((time.time() - start) * 1000)
-        state["history"].append(f"[graph] completed in {state['latency_ms']}ms")
-        return state
-
-    return run
+    # Khởi tạo StateGraph với AgentState schema
+    workflow = StateGraph(AgentState)
+    
+    # Add nodes (workers)
+    workflow.add_node("supervisor", supervisor_node)
+    workflow.add_node("retrieval_worker", retrieval_worker_node)
+    workflow.add_node("policy_tool_worker", policy_tool_worker_node)
+    workflow.add_node("human_review", human_review_node)
+    workflow.add_node("synthesis_worker", synthesis_worker_node)
+    
+    # Set entry point
+    workflow.set_entry_point("supervisor")
+    
+    # Add conditional edges từ supervisor
+    workflow.add_conditional_edges(
+        "supervisor",
+        route_decision,
+        {
+            "retrieval_worker": "retrieval_worker",
+            "policy_tool_worker": "policy_tool_worker",
+            "human_review": "human_review"
+        }
+    )
+    
+    # Add edges từ workers
+    workflow.add_edge("retrieval_worker", "synthesis_worker")
+    
+    # Policy worker có thể cần retrieval nếu chưa có chunks
+    workflow.add_conditional_edges(
+        "policy_tool_worker",
+        should_retrieve_after_policy,
+        {
+            "retrieval_worker": "retrieval_worker",
+            "synthesis_worker": "synthesis_worker"
+        }
+    )
+    
+    # Human review → retrieval (để lấy evidence sau khi approve)
+    workflow.add_edge("human_review", "retrieval_worker")
+    
+    # Synthesis → END
+    workflow.add_edge("synthesis_worker", END)
+    
+    # Compile graph
+    return workflow.compile()
 
 
 # ─────────────────────────────────────────────
@@ -295,8 +320,18 @@ def run_graph(task: str) -> AgentState:
     Returns:
         AgentState với final_answer, trace, routing info, v.v.
     """
+    import time
+    start = time.time()
+    
     state = make_initial_state(task)
-    result = _graph(state)
+    
+    # LangGraph invoke
+    result = _graph.invoke(state)
+    
+    # Calculate latency
+    result["latency_ms"] = int((time.time() - start) * 1000)
+    result["history"].append(f"[graph] completed in {result['latency_ms']}ms")
+    
     return result
 
 
