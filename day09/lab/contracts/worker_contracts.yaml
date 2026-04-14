@@ -96,8 +96,8 @@ retrieval_worker:
     - "Score phải là float trong khoảng [0, 1]"
     - "Stateless: không đọc hoặc ghi state ngoài những gì được khai báo ở trên"
   actual_implementation:
-    status: "TODO Sprint 2"  # Update to "done" khi xong
-    notes: ""
+    status: "done"
+    notes: "Dense retrieval via ChromaDB (collection 'rag_lab'), embedding with OpenAI text-embedding-3-small, fallback to random embeddings for testing. Returns top_k chunks with cosine similarity scores."
 
 # ─────────────────────────────────────────────
 # Policy Tool Worker
@@ -166,8 +166,8 @@ policy_tool_worker:
     - "Phải ghi tên MCP tool đã gọi vào mcp_tools_used"
     - "Không được tự bịa policy rules không có trong tài liệu"
   actual_implementation:
-    status: "TODO Sprint 2"
-    notes: ""
+    status: "done"
+    notes: "Rule-based policy analysis with exception detection for flash_sale, digital_product, activated_product. Temporal scoping for policy v3 vs v4. MCP integration via _call_mcp_tool() for search_kb and get_ticket_info."
 
 # ─────────────────────────────────────────────
 # Synthesis Worker
@@ -214,8 +214,8 @@ synthesis_worker:
     - "confidence < 0.4 → khuyến khích set hitl_triggered=True"
     - "Không được dùng kiến thức ngoài context được cung cấp"
   actual_implementation:
-    status: "TODO Sprint 2"
-    notes: ""
+    status: "done"
+    notes: "LLM-based synthesis with grounded prompt (OpenAI gpt-4o-mini primary, Gemini fallback). Context built from retrieved chunks + policy exceptions. Confidence estimation based on chunk scores and exception penalties. Abstain logic for missing evidence."
 
 # ─────────────────────────────────────────────
 # MCP Server
