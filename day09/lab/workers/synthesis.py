@@ -39,10 +39,8 @@ Quy tắc nghiêm ngặt:
 QUAN TRỌNG: ĐỊNH DẠNG ĐẦU RA
 Bạn BẮT BUỘC phải trả kết quả theo đúng chuẩn JSON với cấu trúc dưới đây (KHÔNG dùng markdown backticks, KHÔNG in ra text nào khác ngoài JSON):
 {
-    "answer": "Câu trả lời của bạn, có thể xuống dòng bằng ký tự \\n",
-    "confidence": 0.85
+    "answer": "Câu trả lời của bạn, có thể xuống dòng bằng ký tự \\n"
 }
-Trong đó "confidence" là số thực từ 0.0 đến 1.0 (1.0 là cao nhất, < 0.4 là khi thông tin thiếu).
 """
 
 
@@ -56,7 +54,7 @@ def _call_llm(messages: list) -> str:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             messages=messages,
             temperature=0.1,  # Low temperature để grounded
             max_tokens=500,
@@ -112,14 +110,116 @@ def _build_context(chunks: list, policy_result: dict) -> str:
     return "\n\n".join(parts)
 
 
-def _estimate_confidence(chunks: list, answer: str, policy_result: dict) -> float:
+def _estimate_confidence_llm_judge(chunks: list, answer: str, policy_result: dict, task: str) -> float:
     """
-    Ước tính confidence dựa vào:
-    - Số lượng và quality của chunks
-    - Có exceptions không
-    - Answer có abstain không
+    Sử dụng LLM-as-Judge để đánh giá confidence của câu trả lời.
+    
+    LLM sẽ đánh giá dựa trên:
+    - Evidence quality: Chunks có đủ thông tin không?
+    - Answer grounding: Câu trả lời có dựa vào evidence không?
+    - Completeness: Câu trả lời có đầy đủ không?
+    - Uncertainty indicators: Có dấu hiệu không chắc chắn không?
+    
+    Returns: confidence score từ 0.0 đến 1.0
+    """
+    JUDGE_PROMPT = """Bạn là một chuyên gia đánh giá chất lượng câu trả lời RAG (Retrieval-Augmented Generation).
 
-    TODO Sprint 2: Có thể dùng LLM-as-Judge để tính confidence chính xác hơn.
+Nhiệm vụ: Đánh giá mức độ tin cậy (confidence) của câu trả lời dựa trên evidence được cung cấp.
+
+Tiêu chí đánh giá:
+1. Evidence Quality (0-0.3): Chunks có đủ thông tin để trả lời câu hỏi không?
+   - 0.3: Evidence rất đầy đủ, chi tiết, trực tiếp
+   - 0.2: Evidence đủ nhưng có thể thiếu một số chi tiết
+   - 0.1: Evidence mơ hồ hoặc gián tiếp
+   - 0.0: Không có evidence hoặc không liên quan
+
+2. Answer Grounding (0-0.4): Câu trả lời có dựa chặt chẽ vào evidence không?
+   - 0.4: Mỗi phần của câu trả lời đều có evidence hỗ trợ
+   - 0.3: Phần lớn câu trả lời có evidence
+   - 0.2: Một số phần thiếu evidence
+   - 0.1: Câu trả lời có thể hallucinate
+   - 0.0: Câu trả lời không dựa vào evidence
+
+3. Completeness (0-0.2): Câu trả lời có đầy đủ không?
+   - 0.2: Trả lời đầy đủ tất cả khía cạnh của câu hỏi
+   - 0.1: Trả lời một phần
+   - 0.0: Không trả lời được hoặc abstain
+
+4. Uncertainty Handling (0-0.1): Xử lý sự không chắc chắn
+   - 0.1: Thừa nhận rõ ràng khi thiếu thông tin
+   - 0.05: Có một số hedging phrases hợp lý
+   - 0.0: Không thừa nhận uncertainty khi cần thiết
+
+Trả về JSON với format:
+{
+    "evidence_quality": 0.0-0.3,
+    "answer_grounding": 0.0-0.4,
+    "completeness": 0.0-0.2,
+    "uncertainty_handling": 0.0-0.1,
+    "total_confidence": 0.0-1.0,
+    "reasoning": "Giải thích ngắn gọn"
+}
+"""
+
+    # Build evaluation context
+    context_parts = []
+    context_parts.append(f"=== CÂU HỎI ===\n{task}")
+    context_parts.append(f"\n=== CÂU TRẢ LỜI ===\n{answer}")
+    
+    if chunks:
+        context_parts.append("\n=== EVIDENCE (CHUNKS) ===")
+        for i, chunk in enumerate(chunks, 1):
+            source = chunk.get("source", "unknown")
+            text = chunk.get("text", "")
+            score = chunk.get("score", 0)
+            context_parts.append(f"[{i}] {source} (score: {score:.2f})\n{text}")
+    else:
+        context_parts.append("\n=== EVIDENCE ===\n(Không có chunks)")
+    
+    if policy_result and policy_result.get("exceptions_found"):
+        context_parts.append(f"\n=== POLICY EXCEPTIONS ===\n{len(policy_result['exceptions_found'])} exceptions found")
+    
+    eval_context = "\n".join(context_parts)
+    
+    messages = [
+        {"role": "system", "content": JUDGE_PROMPT},
+        {"role": "user", "content": eval_context}
+    ]
+    
+    try:
+        llm_output = _call_llm(messages)
+        print(f"✅ LLM-as-Judge response received (length: {len(llm_output)})")
+        
+        # Parse JSON response
+        cleaned = llm_output.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:-3].strip()
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:-3].strip()
+        
+        judge_result = json.loads(cleaned)
+        confidence = float(judge_result.get("total_confidence", 0.0))
+        
+        # Clamp to valid range
+        confidence = max(0.0, min(1.0, confidence))
+        
+        # Log reasoning for debugging
+        reasoning = judge_result.get("reasoning", "")
+        print(f"🔍 LLM Judge breakdown: EQ={judge_result.get('evidence_quality', 0)}, AG={judge_result.get('answer_grounding', 0)}, C={judge_result.get('completeness', 0)}, UH={judge_result.get('uncertainty_handling', 0)}")
+        if reasoning:
+            print(f"� Reasoning: {reasoning}")
+        
+        return round(confidence, 2)
+        
+    except Exception as e:
+        print(f"⚠️ LLM-as-Judge failed: {e}, falling back to heuristic")
+        return _estimate_confidence_heuristic(chunks, answer, policy_result)
+
+
+def _estimate_confidence_heuristic(chunks: list, answer: str, policy_result: dict) -> float:
+    """
+    Fallback heuristic method khi LLM-as-Judge không khả dụng.
+    Đây là phương pháp cũ, giữ lại để fallback.
     """
     if not chunks:
         return 0.1  # Không có evidence → low confidence
@@ -138,6 +238,23 @@ def _estimate_confidence(chunks: list, answer: str, policy_result: dict) -> floa
 
     confidence = min(0.95, avg_score - exception_penalty)
     return round(max(0.1, confidence), 2)
+
+
+def _estimate_confidence(chunks: list, answer: str, policy_result: dict, task: str = "") -> float:
+    """
+    Wrapper function để chọn giữa LLM-as-Judge và heuristic.
+    
+    Mặc định sử dụng LLM-as-Judge, fallback về heuristic nếu có lỗi.
+    """
+    # Có thể thêm flag để disable LLM judge nếu cần
+    use_llm_judge = os.getenv("USE_LLM_JUDGE", "true").lower() == "true"
+    
+    if use_llm_judge and task:
+        print("🤖 Using LLM-as-Judge for confidence estimation...")
+        return _estimate_confidence_llm_judge(chunks, answer, policy_result, task)
+    else:
+        print("📊 Using heuristic method for confidence estimation...")
+        return _estimate_confidence_heuristic(chunks, answer, policy_result)
 
 
 def synthesize(task: str, chunks: list, policy_result: dict) -> dict:
@@ -163,9 +280,8 @@ Hãy trả lời câu hỏi dựa vào tài liệu (đảm bảo xuất JSON for
 
     llm_output = _call_llm(messages)
     
-    # Parse JSON để lấy answer và confidence
+    # Parse JSON để lấy answer (bỏ qua confidence từ model)
     final_answer = llm_output
-    confidence = 0.0
     
     try:
         cleaned = llm_output.strip()
@@ -176,14 +292,12 @@ Hãy trả lời câu hỏi dựa vào tài liệu (đảm bảo xuất JSON for
             
         data = json.loads(cleaned)
         final_answer = data.get("answer", llm_output)
-        confidence = float(data.get("confidence", 0.0))
-        
-        # Nếu model rớt confidence về 0.0, fallback về thuật toán tay
-        if confidence == 0.0:
-            confidence = _estimate_confidence(chunks, final_answer, policy_result)
     except Exception as e:
         print(f"⚠️ Fail to parse JSON LLM output: {e}")
-        confidence = _estimate_confidence(chunks, final_answer, policy_result)
+    
+    # LUÔN dùng LLM-as-Judge để đánh giá confidence (không dùng self-assessment)
+    print("📝 Answer generated, now evaluating with LLM-as-Judge...")
+    confidence = _estimate_confidence(chunks, final_answer, policy_result, task)
 
     sources = list({c.get("source", "unknown") for c in chunks})
 
