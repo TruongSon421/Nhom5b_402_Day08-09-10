@@ -24,3 +24,5 @@ __pycache__/
 day08/lab/data/grading_questions.json
 
 day08/lab/.env
+day09/lab/.env
+day10/lab/.env
