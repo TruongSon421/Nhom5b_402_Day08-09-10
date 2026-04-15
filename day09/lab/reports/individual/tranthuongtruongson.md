@@ -1,6 +1,6 @@
 # Báo Cáo Cá Nhân — Lab Day 09: Multi-Agent Orchestration
 
-**Họ và tên:** Trần Thương Trường Sơn  
+**Họ và tên:** Trần Thượng Trường Sơn  
 **Vai trò trong nhóm:** Trace & Docs Owner  
 **Ngày nộp:** 14/04/2026  
 **Độ dài yêu cầu:** 500–800 từ

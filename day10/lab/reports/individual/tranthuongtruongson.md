@@ -1,6 +1,6 @@
 # Báo cáo cá nhân — Sprint 1 & Sprint 4
 
-**Họ và tên:** Trần Thương Trường Sơn  
+**Họ và tên:** Trần Thượng Trường Sơn  
 **Vai trò:** Data contract & chuẩn hóa tài liệu kỹ thuật  
 **Ngày nộp:** 15/04/2026
 
