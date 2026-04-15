@@ -54,13 +54,26 @@ def _normalize_effective_date(raw: str) -> Tuple[str, str]:
 
 
 def load_raw_csv(path: Path) -> List[Dict[str, str]]:
+    """
+    Load raw CSV with UTF-8 BOM support.
+    
+    Handles:
+    - UTF-8 BOM (Byte Order Mark) at the beginning of file
+    - Field whitespace stripping
+    - Empty field handling
+    """
     rows: List[Dict[str, str]] = []
-    with path.open(encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            rows.append({k: (v or "").strip() for k, v in r.items()})
+    
+    # Read file content to handle BOM
+    content = path.read_text(encoding="utf-8-sig")  # utf-8-sig automatically strips BOM
+    
+    from io import StringIO
+    reader = csv.DictReader(StringIO(content))
+    for r in reader:
+        # Strip whitespace from all field values
+        rows.append({k: (v or "").strip() for k, v in r.items()})
+    
     return rows
-
 
 def clean_rows(
     rows: List[Dict[str, str]],
