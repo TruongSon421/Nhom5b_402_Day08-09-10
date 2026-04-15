@@ -26,6 +26,44 @@ ALLOWED_DOC_IDS = frozenset(
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DMY_SLASH = re.compile(r"^(\d{2})/(\d{2})/(\d{4})$")
 
+# NEW CLEANING RULES - Sprint 2
+# Rule 1: Strip BOM (Byte Order Mark)
+def _strip_bom(text: str) -> Tuple[str, bool]:
+    """Strip Byte Order Mark from text. Returns (cleaned_text, was_modified)."""
+    if '\ufeff' in text:
+        return text.replace('\ufeff', ''), True
+    return text, False
+
+
+# Rule 2: Normalize Unicode (smart quotes to straight quotes)
+_UNICODE_MAP = {
+    '\u2018': "'",  # Left single quote
+    '\u2019': "'",  # Right single quote
+    '\u201c': '"',  # Left double quote
+    '\u201d': '"',  # Right double quote
+    '\u2013': '-',  # En dash
+    '\u2014': '-',  # Em dash
+    '\u00a0': ' ',  # Non-breaking space
+}
+
+def _normalize_unicode(text: str) -> Tuple[str, bool]:
+    """Normalize Unicode characters (smart quotes to straight quotes)."""
+    modified = False
+    result = text
+    for old, new in _UNICODE_MAP.items():
+        if old in result:
+            result = result.replace(old, new)
+            modified = True
+    return result, modified
+
+
+# Rule 3: Detect excessive whitespace (>5 consecutive spaces)
+_EXCESSIVE_WHITESPACE = re.compile(r' {6,}')
+
+def _check_excessive_whitespace(text: str) -> bool:
+    """Check if text has >5 consecutive spaces."""
+    return bool(_EXCESSIVE_WHITESPACE.search(text))
+
 
 def _norm_text(s: str) -> str:
     return " ".join((s or "").strip().split()).lower()
@@ -54,26 +92,13 @@ def _normalize_effective_date(raw: str) -> Tuple[str, str]:
 
 
 def load_raw_csv(path: Path) -> List[Dict[str, str]]:
-    """
-    Load raw CSV with UTF-8 BOM support.
-    
-    Handles:
-    - UTF-8 BOM (Byte Order Mark) at the beginning of file
-    - Field whitespace stripping
-    - Empty field handling
-    """
     rows: List[Dict[str, str]] = []
-    
-    # Read file content to handle BOM
-    content = path.read_text(encoding="utf-8-sig")  # utf-8-sig automatically strips BOM
-    
-    from io import StringIO
-    reader = csv.DictReader(StringIO(content))
-    for r in reader:
-        # Strip whitespace from all field values
-        rows.append({k: (v or "").strip() for k, v in r.items()})
-    
+    with path.open(encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            rows.append({k: (v or "").strip() for k, v in r.items()})
     return rows
+
 
 def clean_rows(
     rows: List[Dict[str, str]],
@@ -90,6 +115,11 @@ def clean_rows(
     4) Quarantine: chunk_text rỗng hoặc effective_date rỗng sau chuẩn hoá.
     5) Loại trùng nội dung chunk_text (giữ bản đầu).
     6) Fix stale refund: policy_refund_v4 chứa '14 ngày làm việc' → 7 ngày.
+
+    NEW RULES (Sprint 2):
+    7) Strip BOM from chunk_text
+    8) Normalize Unicode (smart quotes → straight quotes)
+    9) Quarantine: excessive whitespace (>5 consecutive spaces)
     """
     quarantine: List[Dict[str, Any]] = []
     seen_text: set[str] = set()
@@ -128,6 +158,17 @@ def clean_rows(
             quarantine.append({**raw, "reason": "missing_chunk_text"})
             continue
 
+        # NEW RULE 9: Check excessive whitespace BEFORE other processing
+        if _check_excessive_whitespace(text):
+            quarantine.append({**raw, "reason": "excessive_whitespace"})
+            continue
+
+        # NEW RULE 7: Strip BOM
+        text, bom_removed = _strip_bom(text)
+        
+        # NEW RULE 8: Normalize Unicode
+        text, unicode_normalized = _normalize_unicode(text)
+
         key = _norm_text(text)
         if key in seen_text:
             quarantine.append({**raw, "reason": "duplicate_chunk_text"})
@@ -135,13 +176,24 @@ def clean_rows(
         seen_text.add(key)
 
         fixed_text = text
+        cleaning_notes = []
+        
         if apply_refund_window_fix and doc_id == "policy_refund_v4":
             if "14 ngày làm việc" in fixed_text:
                 fixed_text = fixed_text.replace(
                     "14 ngày làm việc",
                     "7 ngày làm việc",
                 )
-                fixed_text += " [cleaned: stale_refund_window]"
+                cleaning_notes.append("stale_refund_window")
+
+        # Add cleaning notes if any rules were applied
+        if bom_removed:
+            cleaning_notes.append("bom_removed")
+        if unicode_normalized:
+            cleaning_notes.append("unicode_normalized")
+        
+        if cleaning_notes:
+            fixed_text += f" [cleaned: {', '.join(cleaning_notes)}]"
 
         seq += 1
         cleaned.append(

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Tuple
 
 
@@ -17,6 +18,43 @@ class ExpectationResult:
     passed: bool
     severity: str  # "warn" | "halt"
     detail: str
+
+
+# NEW EXPECTATIONS - Sprint 2
+# E7: No HTML tags in chunk_text (halt)
+_HTML_TAG_PATTERN = re.compile(r'<[^>]+>')
+
+def _check_no_html_tags(cleaned_rows: List[Dict[str, Any]]) -> Tuple[bool, str]:
+    """Check that no chunk_text contains HTML tags."""
+    rows_with_html = [
+        r for r in cleaned_rows
+        if _HTML_TAG_PATTERN.search(r.get("chunk_text", ""))
+    ]
+    passed = len(rows_with_html) == 0
+    detail = f"html_tag_count={len(rows_with_html)}"
+    return passed, detail
+
+
+# E8: effective_date not in the far future (warn)
+def _check_effective_date_not_future(cleaned_rows: List[Dict[str, Any]]) -> Tuple[bool, str]:
+    """Check that effective_date is not beyond current date + 30 days."""
+    today = date.today()
+    future_threshold = today + timedelta(days=30)
+    
+    rows_in_future = []
+    for r in cleaned_rows:
+        eff_date_str = r.get("effective_date", "")
+        if eff_date_str:
+            try:
+                eff_date = datetime.strptime(eff_date_str, "%Y-%m-%d").date()
+                if eff_date > future_threshold:
+                    rows_in_future.append(r.get("chunk_id"))
+            except ValueError:
+                pass
+    
+    passed = len(rows_in_future) == 0
+    detail = f"future_date_count={len(rows_in_future)}"
+    return passed, detail
 
 
 def run_expectations(cleaned_rows: List[Dict[str, Any]]) -> Tuple[List[ExpectationResult], bool]:
@@ -109,6 +147,28 @@ def run_expectations(cleaned_rows: List[Dict[str, Any]]) -> Tuple[List[Expectati
             ok6,
             "halt",
             f"violations={len(bad_hr_annual)}",
+        )
+    )
+
+    # NEW E7: No HTML tags in chunk_text (halt)
+    ok7, detail7 = _check_no_html_tags(cleaned_rows)
+    results.append(
+        ExpectationResult(
+            "no_html_tags",
+            ok7,
+            "halt",
+            detail7,
+        )
+    )
+
+    # NEW E8: effective_date not in the far future (warn)
+    ok8, detail8 = _check_effective_date_not_future(cleaned_rows)
+    results.append(
+        ExpectationResult(
+            "effective_date_not_future",
+            ok8,
+            "warn",
+            detail8,
         )
     )
 
