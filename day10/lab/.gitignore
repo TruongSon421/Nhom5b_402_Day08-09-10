@@ -6,4 +6,6 @@ __pycache__/
 .DS_Store
 chroma_db/
 .pytest_cache/
-*.log
+
+# Allow log files in artifacts/logs (required for grading)
+!artifacts/logs/*.log
